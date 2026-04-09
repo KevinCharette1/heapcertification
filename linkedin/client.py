@@ -116,12 +116,7 @@ class LinkedInClient:
         data = self._request(
             "GET",
             "adAccountsV2",
-            params={
-                "q": "search",
-                "search.type.values[0]": "BUSINESS",
-                "search.status.values[0]": "ACTIVE",
-                "count": 100,
-            },
+            params={"q": "search", "count": 100},
         )
         results = []
         for el in data.get("elements", []):
