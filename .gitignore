@@ -17,6 +17,7 @@ env/
 # Project secrets — NEVER commit these
 tokens.json
 *.json.bak
+.oauth_state
 
 # IDE
 .idea/
