@@ -3,6 +3,14 @@ Agentic loop for the LinkedIn Campaign Agent.
 
 Runs a Claude tool-use loop: send messages → handle tool calls → repeat
 until Claude returns a final text response (stop_reason == "end_turn").
+
+Cost optimisations applied:
+  1. Prompt caching — system prompt + tool definitions are marked with
+     cache_control so Anthropic caches them after the first call.
+     Cached tokens cost ~90% less than uncached input tokens.
+  2. History trimming — only the last MAX_HISTORY messages are sent,
+     preventing unbounded token growth over long sessions.
+  3. Reduced max_tokens — capped at 1024; typical responses are 200-600 tokens.
 """
 
 import anthropic
@@ -11,7 +19,16 @@ from agent.tool_handlers import ToolHandler
 from agent.tools import LINKEDIN_TOOLS
 from agent.prompts import build_system_prompt
 
-MAX_ITERATIONS = 20  # safety cap — prevents runaway loops
+MAX_ITERATIONS = 20   # safety cap — prevents runaway loops
+MAX_HISTORY = 20      # keep last 10 conversation turns (user + assistant pairs)
+
+# Cache the tool list: mark the final tool so Anthropic caches the entire
+# tools block on the first call. Subsequent calls within the 5-min cache
+# window pay ~10% of normal input token cost for these definitions.
+_TOOLS_CACHED = [
+    *LINKEDIN_TOOLS[:-1],
+    {**LINKEDIN_TOOLS[-1], "cache_control": {"type": "ephemeral"}},
+]
 
 
 class AgentRunner:
@@ -44,16 +61,28 @@ class AgentRunner:
         if conversation_history is None:
             conversation_history = []
 
-        messages = conversation_history + [{"role": "user", "content": user_message}]
-        system = build_system_prompt(self._account_id)
+        # Trim history before adding the new user message so the total sent
+        # to the API never exceeds MAX_HISTORY + 1 messages.
+        trimmed = conversation_history[-MAX_HISTORY:] if len(conversation_history) > MAX_HISTORY else conversation_history
+        messages = trimmed + [{"role": "user", "content": user_message}]
+
+        # System prompt passed as a list with cache_control so Anthropic
+        # caches it after the first call (~90% discount on subsequent calls).
+        system = [
+            {
+                "type": "text",
+                "text": build_system_prompt(self._account_id),
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
 
         for iteration in range(MAX_ITERATIONS):
             response = self._client.messages.create(
                 model=self._model,
-                max_tokens=4096,
+                max_tokens=1024,
                 system=system,
                 messages=messages,
-                tools=LINKEDIN_TOOLS,
+                tools=_TOOLS_CACHED,
             )
 
             # Append the assistant turn to history
