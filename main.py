@@ -15,7 +15,7 @@ import anthropic
 
 from config import get_settings
 from linkedin.client import LinkedInClient
-from linkedin.oauth import run_oauth_flow
+from linkedin.oauth import show_oauth_url, complete_oauth_from_url
 from agent.runner import AgentRunner
 from agent.tool_handlers import ToolHandler
 
@@ -35,16 +35,25 @@ def save_tokens(tokens: dict) -> None:
     TOKENS_FILE.chmod(0o600)  # owner read/write only
 
 
-def cmd_login(settings) -> None:
-    """Run the OAuth flow and save tokens."""
-    print("Starting LinkedIn OAuth flow...")
-    tokens = run_oauth_flow(settings)
-    save_tokens(tokens)
-
-    name = tokens.get("member_name") or tokens.get("member_id") or "unknown"
-    print(f"\nAuthenticated as: {name}")
-    print(f"Tokens saved to {TOKENS_FILE}")
-    print("\nRun 'python main.py' to start the agent.")
+def cmd_login(settings, callback_url: str | None = None) -> None:
+    """
+    OAuth login — two-step flow:
+      Step 1: python main.py login
+        → prints the auth URL; saves state to .oauth_state
+      Step 2: python main.py login 'http://localhost:8888/callback?code=...&state=...'
+        → completes auth using the pasted callback URL
+    """
+    if callback_url:
+        # Step 2 — complete the flow with the pasted callback URL
+        tokens = complete_oauth_from_url(callback_url, settings)
+        save_tokens(tokens)
+        name = tokens.get("member_name") or tokens.get("member_id") or "unknown"
+        print(f"\nAuthenticated as: {name}")
+        print(f"Tokens saved to {TOKENS_FILE}")
+        print("\nRun 'python main.py' to start the agent.")
+    else:
+        # Step 1 — show the auth URL
+        show_oauth_url(settings)
 
 
 def pick_account(accounts: list[dict]) -> dict:
@@ -159,7 +168,8 @@ def main() -> None:
     if len(sys.argv) > 1:
         command = sys.argv[1].lower()
         if command == "login":
-            cmd_login(settings)
+            callback_url = sys.argv[2] if len(sys.argv) > 2 else None
+            cmd_login(settings, callback_url=callback_url)
         else:
             print(f"Unknown command: {command}")
             print("Usage: python main.py [login]")
