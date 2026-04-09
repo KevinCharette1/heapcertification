@@ -70,7 +70,6 @@ class ToolHandler:
         return self._client.create_campaign_group(
             account_id=self._account(inp),
             name=inp["name"],
-            status="PAUSED",  # always paused
             total_budget_amount=inp.get("total_budget_amount"),
             total_budget_currency=inp.get("total_budget_currency"),
             start_date=inp.get("start_date"),
@@ -138,7 +137,6 @@ class ToolHandler:
         return self._client.create_ad(
             campaign_id=inp["campaign_id"],
             creative_reference=inp["creative_reference"],
-            status="PAUSED",  # always paused
         )
 
 

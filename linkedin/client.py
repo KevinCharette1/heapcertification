@@ -158,7 +158,7 @@ class LinkedInClient:
         self,
         account_id: str,
         name: str,
-        status: str = "PAUSED",
+        status: str | None = None,
         total_budget_amount: str | None = None,
         total_budget_currency: str | None = None,
         start_date: str | None = None,
@@ -167,8 +167,9 @@ class LinkedInClient:
         payload: dict[str, Any] = {
             "account": account_id,
             "name": name,
-            "status": status,
         }
+        if status:
+            payload["status"] = status
 
         if total_budget_amount and total_budget_currency:
             payload["totalBudget"] = {
@@ -190,7 +191,6 @@ class LinkedInClient:
         return {
             "id": f"urn:li:sponsoredCampaignGroup:{group_id}",
             "name": name,
-            "status": status,
         }
 
     # ------------------------------------------------------------------
@@ -250,7 +250,6 @@ class LinkedInClient:
             "account": account_id,
             "campaignGroup": campaign_group_id,
             "name": name,
-            "status": "PAUSED",
             "type": campaign_type,
             "objectiveType": objective,
             "costType": cost_type,
@@ -289,7 +288,6 @@ class LinkedInClient:
         return {
             "id": f"urn:li:sponsoredCampaign:{campaign_id}",
             "name": name,
-            "status": "PAUSED",
             "account_id": account_id,
             "campaign_group_id": campaign_group_id,
             "objective": objective,
@@ -491,7 +489,6 @@ class LinkedInClient:
         return {
             "id": f"urn:li:adDirectSponsoredContent:{dsc_id}",
             "name": name,
-            "status": "DRAFT",
             "destination_url": destination_url,
             "call_to_action": call_to_action,
         }
@@ -500,17 +497,14 @@ class LinkedInClient:
         self,
         campaign_id: str,
         creative_reference: str,
-        status: str = "PAUSED",
     ) -> dict:
         """
         Create an ad by associating a creative with a campaign.
         creative_reference: urn:li:adDirectSponsoredContent:XXX
                             or urn:li:ugcPost:XXX (existing organic post)
-        Status defaults to PAUSED — activate manually in Campaign Manager.
         """
         payload = {
             "campaign": campaign_id,
-            "status": status,
             "type": "SPONSORED_UPDATE_V2",
             "variables": {
                 "data": {
@@ -528,7 +522,6 @@ class LinkedInClient:
             "id": f"urn:li:sponsoredCreative:{creative_id}",
             "campaign_id": campaign_id,
             "creative_reference": creative_reference,
-            "status": status,
         }
 
     def close(self):

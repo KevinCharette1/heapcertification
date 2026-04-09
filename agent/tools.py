@@ -35,7 +35,7 @@ LINKEDIN_TOOLS = [
         "name": "create_campaign_group",
         "description": (
             "Create a LinkedIn campaign group (container for related campaigns). "
-            "Always created as PAUSED. Returns the new campaign group URN."
+            "Returns the new campaign group URN."
         ),
         "input_schema": {
             "type": "object",
@@ -77,7 +77,6 @@ LINKEDIN_TOOLS = [
         "name": "create_campaign",
         "description": (
             "Create a LinkedIn campaign inside a campaign group. "
-            "Always created as PAUSED — nothing spends until activated. "
             "Call search_targeting_facets first to resolve URNs for all targeting terms."
         ),
         "input_schema": {
@@ -258,8 +257,7 @@ LINKEDIN_TOOLS = [
         "name": "create_direct_sponsored_content",
         "description": (
             "Create a Direct Sponsored Content ad (dark post — does not appear on the company page). "
-            "Returns a creative URN to be passed to create_ad. "
-            "Always created as DRAFT — nothing goes live until create_ad is called and the campaign is activated."
+            "Returns a creative URN to be passed to create_ad."
         ),
         "input_schema": {
             "type": "object",
@@ -313,8 +311,7 @@ LINKEDIN_TOOLS = [
         "name": "create_ad",
         "description": (
             "Associate a creative (DSC) with a campaign to form a complete ad. "
-            "This is always the final step when building a campaign. "
-            "Status defaults to PAUSED — nothing spends until the campaign is activated."
+            "This is always the final step when building a campaign."
         ),
         "input_schema": {
             "type": "object",
