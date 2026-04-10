@@ -20,7 +20,7 @@ from agent.tools import LINKEDIN_TOOLS
 from agent.prompts import build_system_prompt
 
 MAX_ITERATIONS = 20   # safety cap — prevents runaway loops
-MAX_HISTORY = 20      # keep last 10 conversation turns (user + assistant pairs)
+MAX_HISTORY = 40      # max messages kept across turns; 40 handles the full campaign brief flow
 
 # Cache the tool list: mark the final tool so Anthropic caches the entire
 # tools block on the first call. Subsequent calls within the 5-min cache
@@ -61,19 +61,7 @@ class AgentRunner:
         if conversation_history is None:
             conversation_history = []
 
-        # Trim history before adding the new user message so the total sent
-        # to the API never exceeds MAX_HISTORY + 1 messages.
-        # After slicing, the window must start at a plain-text user turn.
-        # A raw slice can land on either:
-        #   - an assistant message (invalid opener)
-        #   - a tool_result user message (no matching tool_use → 400 from API)
-        # Advance forward until we hit a safe starting point.
-        if len(conversation_history) > MAX_HISTORY:
-            trimmed = conversation_history[-MAX_HISTORY:]
-            while trimmed and not _is_text_user_turn(trimmed[0]):
-                trimmed = trimmed[1:]
-        else:
-            trimmed = conversation_history
+        trimmed = _trim_to_turn_boundary(conversation_history, MAX_HISTORY)
         messages = trimmed + [{"role": "user", "content": user_message}]
 
         # System prompt passed as a list with cache_control so Anthropic
@@ -126,14 +114,37 @@ class AgentRunner:
 
 
 def _is_text_user_turn(message: dict) -> bool:
-    """Return True only for plain-text user messages — a safe window start point.
-
-    Tool_result user turns and assistant turns are both invalid openers:
-    - assistant turn: conversations must start with a user message
-    - tool_result turn: Claude requires the preceding assistant message to
-      contain the matching tool_use block, which would have been trimmed off
-    """
+    """Return True for plain-text user messages — the only safe window start point."""
     return message.get("role") == "user" and isinstance(message.get("content"), str)
+
+
+def _trim_to_turn_boundary(history: list, max_messages: int) -> list:
+    """Trim history to at most max_messages, always starting at a complete turn boundary.
+
+    A complete turn boundary is a plain-text user message (not a tool_result block).
+    Starting mid-turn causes a 400 from the API because the tool_result at the window
+    start has no matching tool_use in the preceding assistant message.
+
+    Strategy: scan the full history for all turn-start indices, then pick the earliest
+    one where the resulting suffix fits within max_messages.  This is safer than a raw
+    slice + advance because it inspects the whole history rather than just the tail.
+    """
+    if len(history) <= max_messages:
+        return history
+
+    turn_starts = [i for i, m in enumerate(history) if _is_text_user_turn(m)]
+
+    if not turn_starts:
+        return []  # No safe cut point; discard rather than send invalid history
+
+    # Walk forward: find the earliest turn start where len(history[i:]) <= max_messages
+    cut_at = turn_starts[-1]  # safe fallback: keep only the very last turn
+    for idx in turn_starts:
+        if len(history) - idx <= max_messages:
+            cut_at = idx
+            break
+
+    return history[cut_at:]
 
 
 def _extract_text(content: list) -> str:
