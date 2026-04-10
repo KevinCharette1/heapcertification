@@ -167,9 +167,8 @@ class LinkedInClient:
         payload: dict[str, Any] = {
             "account": account_id,
             "name": name,
+            "status": status or "DRAFT",  # LinkedIn requires status; DRAFT = inactive, no spend
         }
-        if status:
-            payload["status"] = status
 
         if total_budget_amount and total_budget_currency:
             payload["totalBudget"] = {
@@ -254,6 +253,7 @@ class LinkedInClient:
             "objectiveType": objective,
             "costType": cost_type,
             "locale": locale_obj,
+            "status": "DRAFT",  # LinkedIn requires status; DRAFT = inactive, no spend
         }
 
         if daily_budget_amount and daily_budget_currency:
