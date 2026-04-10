@@ -63,7 +63,17 @@ class AgentRunner:
 
         # Trim history before adding the new user message so the total sent
         # to the API never exceeds MAX_HISTORY + 1 messages.
-        trimmed = conversation_history[-MAX_HISTORY:] if len(conversation_history) > MAX_HISTORY else conversation_history
+        # We must never start the trimmed window on a tool_result message because
+        # Claude requires every tool_result to have a matching tool_use in the
+        # immediately preceding assistant message. Advance the cut point forward
+        # until we land on a plain user text turn.
+        if len(conversation_history) > MAX_HISTORY:
+            trimmed = conversation_history[-MAX_HISTORY:]
+            # Advance past any leading tool_result blocks
+            while trimmed and _is_tool_result_turn(trimmed[0]):
+                trimmed = trimmed[1:]
+        else:
+            trimmed = conversation_history
         messages = trimmed + [{"role": "user", "content": user_message}]
 
         # System prompt passed as a list with cache_control so Anthropic
@@ -113,6 +123,18 @@ class AgentRunner:
 
         text = _extract_text(response.content) if response else "(no response)"
         return text, messages
+
+
+def _is_tool_result_turn(message: dict) -> bool:
+    """Return True if a message is a user turn containing only tool_result blocks."""
+    if message.get("role") != "user":
+        return False
+    content = message.get("content", "")
+    if isinstance(content, str):
+        return False
+    return isinstance(content, list) and all(
+        isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+    )
 
 
 def _extract_text(content: list) -> str:
