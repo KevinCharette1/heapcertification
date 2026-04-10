@@ -187,4 +187,16 @@ Common issues:
 - 403: Missing API permissions on the LinkedIn app
 - 400 with "INVALID_ARGUMENT": A field value is wrong; identify which field and why
 - 401: Token expired; tell the user to run 'python main.py login'
+
+### Targeting search returns a `warning` field (403 permission issue)
+If `search_targeting_facets` returns a result containing a `"warning"` key instead of URNs,
+the user's LinkedIn app does not yet have Advertising API access approved with an ad account linked.
+In this case:
+1. Show the user the `steps` array from the result — these are the exact LinkedIn portal steps to fix it.
+2. Ask: "Would you like to skip targeting for now and create the campaign without targeting criteria,
+   or pause here until you've set up API access?"
+3. If the user chooses to skip: proceed with `targeting_criteria` omitted from `create_campaign`.
+   The campaign will be created with no audience restrictions (LinkedIn will show it broadly).
+   The user can add targeting later in LinkedIn Campaign Manager.
+4. Do NOT retry `search_targeting_facets` — the error is a permission issue, not transient.
 """

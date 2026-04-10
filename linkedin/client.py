@@ -335,16 +335,33 @@ class LinkedInClient:
                 }
             ]
 
-        data = self._request(
-            "GET",
-            "adTargetingEntities",
-            params={
-                "q": "typeahead",
-                "query": query,
-                "facetUrn": facet_urn,
-                "count": 10,
-            },
-        )
+        try:
+            data = self._request(
+                "GET",
+                "adTargetingEntities",
+                params={
+                    "q": "typeahead",
+                    "query": query,
+                    "facetUrn": facet_urn,
+                    "count": 10,
+                },
+            )
+        except LinkedInAPIError as e:
+            if e.status_code == 403:
+                return [
+                    {
+                        "warning": "Targeting search is not available with your current LinkedIn app permissions.",
+                        "reason": "The adTargetingEntities endpoint requires the Advertising API product to be approved and an ad account linked to your LinkedIn Developer App.",
+                        "steps": [
+                            "1. Go to https://www.linkedin.com/developers/apps → your app → Products tab",
+                            "2. Find 'Advertising API' and check its status is 'Approved' (not Pending)",
+                            "3. If approved: click 'View Ad Accounts' and add your ad account to the app",
+                            "4. Re-authenticate with 'python main.py login' after changes",
+                        ],
+                        "workaround": f"You can skip targeting for now and the campaign will be created without '{facet_type}' targeting criteria.",
+                    }
+                ]
+            raise
         return [
             {"urn": el.get("urn", ""), "name": el.get("name", "")}
             for el in data.get("elements", [])
