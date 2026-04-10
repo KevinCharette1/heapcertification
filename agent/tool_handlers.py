@@ -70,8 +70,8 @@ class ToolHandler:
         return self._client.create_campaign_group(
             account_id=self._account(inp),
             name=inp["name"],
-            total_budget_amount=inp.get("total_budget_amount"),
-            total_budget_currency=inp.get("total_budget_currency"),
+            total_budget_amount=inp["total_budget_amount"],
+            total_budget_currency=inp["total_budget_currency"],
             start_date=inp.get("start_date"),
             end_date=inp.get("end_date"),
         )

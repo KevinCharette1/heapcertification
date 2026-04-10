@@ -113,8 +113,13 @@ Ask each:
 
 ### STEP 6 — Campaign Group
 Ask: "Should this campaign go in a new campaign group, or an existing one?"
-- If new: ask for a name (and optionally a group-level budget/dates)
 - If existing: call `list_campaign_groups` and present the list
+- If new: collect the following (all required by the LinkedIn API):
+  1. **Name** for the campaign group
+  2. **Total budget** (lifetime cap for the group) and **currency** — LinkedIn requires this field.
+     If the user wants no effective cap, suggest a large value like $999,999.
+  3. **Start date** (optional, defaults to today)
+  4. **End date** (optional, leave blank for ongoing)
 
 ---
 
@@ -126,7 +131,7 @@ Present a complete brief like this:
 ── Campaign Brief ──────────────────────────────────────────
 Objective:      Website Visits
 Ad format:      Sponsored Content (Single Image)
-Campaign group: Acme Corp Q2 2026 (new)
+Campaign group: Acme Corp Q2 2026 (new, budget: $10,000 USD)
 Campaign name:  [Client] - Website Visits - SF Engineers
 
 Audience:

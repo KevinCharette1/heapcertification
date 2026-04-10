@@ -158,9 +158,9 @@ class LinkedInClient:
         self,
         account_id: str,
         name: str,
+        total_budget_amount: str,
+        total_budget_currency: str,
         status: str | None = None,
-        total_budget_amount: str | None = None,
-        total_budget_currency: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> dict:
@@ -168,13 +168,11 @@ class LinkedInClient:
             "account": account_id,
             "name": name,
             "status": status or "DRAFT",  # LinkedIn requires status; DRAFT = inactive, no spend
-        }
-
-        if total_budget_amount and total_budget_currency:
-            payload["totalBudget"] = {
+            "totalBudget": {                # LinkedIn requires totalBudget
                 "amount": total_budget_amount,
                 "currencyCode": total_budget_currency,
-            }
+            },
+        }
 
         run_schedule: dict[str, int] = {
             "start": self._to_epoch_ms(start_date)

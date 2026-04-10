@@ -44,11 +44,11 @@ LINKEDIN_TOOLS = [
                 "name": {"type": "string"},
                 "total_budget_amount": {
                     "type": "string",
-                    "description": "Optional group-level total budget as decimal string, e.g. '5000.00'",
+                    "description": "Required by LinkedIn API. Total budget for the group as a decimal string, e.g. '10000.00'. Use a large value like '999999.00' if the user wants no effective limit.",
                 },
                 "total_budget_currency": {
                     "type": "string",
-                    "description": "ISO 4217 currency code, e.g. 'USD'",
+                    "description": "Required by LinkedIn API. ISO 4217 currency code, e.g. 'USD'.",
                 },
                 "start_date": {
                     "type": "string",
@@ -59,7 +59,7 @@ LINKEDIN_TOOLS = [
                     "description": "ISO 8601 date YYYY-MM-DD. Leave blank for ongoing.",
                 },
             },
-            "required": ["name"],
+            "required": ["name", "total_budget_amount", "total_budget_currency"],
         },
     },
     {
