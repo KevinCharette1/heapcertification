@@ -75,6 +75,14 @@ class AgentRunner:
         ]
 
         for iteration in range(MAX_ITERATIONS):
+            # Hard defensive guard: strip any leading non-text-user-turn messages.
+            # This is belt-and-suspenders protection against any edge case in
+            # _trim_to_turn_boundary that could leave an invalid window opener.
+            while messages and not _is_text_user_turn(messages[0]):
+                messages = messages[1:]
+            if not messages:
+                messages = [{"role": "user", "content": user_message}]
+
             response = self._client.messages.create(
                 model=self._model,
                 max_tokens=1024,
@@ -83,23 +91,27 @@ class AgentRunner:
                 tools=_TOOLS_CACHED,
             )
 
-            # Append the assistant turn to history
-            messages.append({"role": "assistant", "content": response.content})
+            # Serialize to plain dicts immediately — NEVER store SDK Pydantic objects
+            # in history. When Pydantic ContentBlock objects are round-tripped through
+            # a trimmed history slice and re-serialized, tool_use IDs can become
+            # inconsistent, causing the API to reject matching tool_result blocks.
+            serialized = _serialize_content(response.content)
+            messages.append({"role": "assistant", "content": serialized})
 
             if response.stop_reason == "end_turn":
-                text = _extract_text(response.content)
+                text = _extract_text(serialized)
                 return text, messages
 
             if response.stop_reason == "tool_use":
                 tool_results = []
-                for block in response.content:
-                    if block.type == "tool_use":
-                        _print_tool_call(block.name, block.input)
-                        result_str = self._handler.dispatch(block.name, block.input)
+                for block in serialized:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        _print_tool_call(block["name"], block["input"])
+                        result_str = self._handler.dispatch(block["name"], block["input"])
                         tool_results.append(
                             {
                                 "type": "tool_result",
-                                "tool_use_id": block.id,
+                                "tool_use_id": block["id"],
                                 "content": result_str,
                             }
                         )
@@ -109,8 +121,43 @@ class AgentRunner:
             # Unexpected stop reason — return whatever text we have
             break
 
-        text = _extract_text(response.content) if response else "(no response)"
+        text = _extract_text(serialized) if "serialized" in dir() else "(no response)"
         return text, messages
+
+
+def _serialize_content(content) -> list:
+    """Convert SDK response ContentBlock objects to minimal plain dicts.
+
+    The Anthropic SDK returns Pydantic model instances (TextBlock, ToolUseBlock,
+    etc.). Storing them directly then passing them back in trimmed history slices
+    can produce inconsistent serialization — particularly, tool_use 'id' fields
+    may not round-trip cleanly, causing the API to reject orphaned tool_result
+    blocks even when the history is structurally valid.
+
+    Converting to plain dicts at store time eliminates this class of bugs.
+    """
+    result = []
+    for block in content:
+        if not hasattr(block, "type"):
+            result.append(block)
+            continue
+        if block.type == "text":
+            result.append({"type": "text", "text": block.text})
+        elif block.type == "tool_use":
+            result.append({
+                "type": "tool_use",
+                "id": block.id,
+                "name": block.name,
+                "input": block.input,
+            })
+        else:
+            # Unknown block type — use model_dump if available, else store as-is
+            result.append(
+                block.model_dump(exclude_none=True)
+                if hasattr(block, "model_dump")
+                else block
+            )
+    return result
 
 
 def _is_text_user_turn(message: dict) -> bool:
@@ -126,8 +173,7 @@ def _trim_to_turn_boundary(history: list, max_messages: int) -> list:
     start has no matching tool_use in the preceding assistant message.
 
     Strategy: scan the full history for all turn-start indices, then pick the earliest
-    one where the resulting suffix fits within max_messages.  This is safer than a raw
-    slice + advance because it inspects the whole history rather than just the tail.
+    one where the resulting suffix fits within max_messages.
     """
     if len(history) <= max_messages:
         return history
@@ -148,13 +194,19 @@ def _trim_to_turn_boundary(history: list, max_messages: int) -> list:
 
 
 def _extract_text(content: list) -> str:
-    parts = [block.text for block in content if hasattr(block, "text") and block.text]
+    """Extract text from content that may be SDK objects or serialized plain dicts."""
+    parts = []
+    for block in content:
+        if isinstance(block, dict):
+            if block.get("type") == "text" and block.get("text"):
+                parts.append(block["text"])
+        elif hasattr(block, "text") and block.text:
+            parts.append(block.text)
     return "\n".join(parts) if parts else "(no response)"
 
 
 def _print_tool_call(name: str, inp: dict) -> None:
     """Print a compact tool call indicator for the CLI."""
-    # Show the most useful field from the input (name, query, campaign_id, etc.)
     label = (
         inp.get("name")
         or inp.get("query")
