@@ -63,14 +63,14 @@ class AgentRunner:
 
         # Trim history before adding the new user message so the total sent
         # to the API never exceeds MAX_HISTORY + 1 messages.
-        # We must never start the trimmed window on a tool_result message because
-        # Claude requires every tool_result to have a matching tool_use in the
-        # immediately preceding assistant message. Advance the cut point forward
-        # until we land on a plain user text turn.
+        # After slicing, the window must start at a plain-text user turn.
+        # A raw slice can land on either:
+        #   - an assistant message (invalid opener)
+        #   - a tool_result user message (no matching tool_use → 400 from API)
+        # Advance forward until we hit a safe starting point.
         if len(conversation_history) > MAX_HISTORY:
             trimmed = conversation_history[-MAX_HISTORY:]
-            # Advance past any leading tool_result blocks
-            while trimmed and _is_tool_result_turn(trimmed[0]):
+            while trimmed and not _is_text_user_turn(trimmed[0]):
                 trimmed = trimmed[1:]
         else:
             trimmed = conversation_history
@@ -125,16 +125,15 @@ class AgentRunner:
         return text, messages
 
 
-def _is_tool_result_turn(message: dict) -> bool:
-    """Return True if a message is a user turn containing only tool_result blocks."""
-    if message.get("role") != "user":
-        return False
-    content = message.get("content", "")
-    if isinstance(content, str):
-        return False
-    return isinstance(content, list) and all(
-        isinstance(b, dict) and b.get("type") == "tool_result" for b in content
-    )
+def _is_text_user_turn(message: dict) -> bool:
+    """Return True only for plain-text user messages — a safe window start point.
+
+    Tool_result user turns and assistant turns are both invalid openers:
+    - assistant turn: conversations must start with a user message
+    - tool_result turn: Claude requires the preceding assistant message to
+      contain the matching tool_use block, which would have been trimmed off
+    """
+    return message.get("role") == "user" and isinstance(message.get("content"), str)
 
 
 def _extract_text(content: list) -> str:
