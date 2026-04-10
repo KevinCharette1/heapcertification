@@ -92,8 +92,18 @@ def cmd_chat(settings) -> None:
     try:
         accounts = linkedin_client.list_ad_accounts()
     except Exception as e:
+        from linkedin.exceptions import LinkedInAPIError
         print(f"\nFailed to fetch ad accounts: {e}")
-        print("Your token may have expired. Run 'python main.py login' to re-authenticate.")
+        if isinstance(e, LinkedInAPIError) and e.status_code == 403:
+            print("\n403 Permission denied. To fix this:")
+            print("  1. Go to https://www.linkedin.com/developers/apps → your app → Products tab")
+            print("  2. Find 'Advertising API' — ensure its status is 'Approved'")
+            print("  3. If approved: click 'View Ad Accounts' and link your ad account to the app")
+            print("  4. Run 'python main.py login' again to refresh your token")
+        elif isinstance(e, LinkedInAPIError) and e.status_code == 401:
+            print("Your token has expired. Run 'python main.py login' to re-authenticate.")
+        else:
+            print("Run 'python main.py login' to re-authenticate if the issue persists.")
         sys.exit(1)
 
     if not accounts:

@@ -114,10 +114,23 @@ class LinkedInClient:
 
     def list_ad_accounts(self) -> list[dict]:
         """List all LinkedIn ad accounts accessible to the authenticated user."""
+        # q=roleAssignee lists accounts by member role — works with r_ads/rw_ads scope
+        # without requiring Marketing Developer Platform approval, unlike q=search.
+        member_id = self._tokens.get("member_id")
+        if not member_id:
+            raise LinkedInAPIError(
+                status_code=0,
+                message="member_id not found in tokens. Re-authenticate with 'python main.py login'.",
+                error_code=0,
+            )
         data = self._request(
             "GET",
             "adAccountsV2",
-            params={"q": "search", "count": 100},
+            params={
+                "q": "roleAssignee",
+                "roleAssignee": member_id,
+                "count": 100,
+            },
         )
         results = []
         for el in data.get("elements", []):
