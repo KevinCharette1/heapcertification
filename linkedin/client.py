@@ -40,6 +40,7 @@ class LinkedInClient:
             "Authorization": f"Bearer {self._tokens['access_token']}",
             "Content-Type": "application/json",
             "X-Restli-Protocol-Version": "2.0.0",
+            "Linkedin-Version": "202504",  # required by newer LinkedIn API endpoints
         }
 
     def _maybe_refresh(self):
