@@ -100,7 +100,7 @@ class AgentRunner:
 
             if response.stop_reason == "end_turn":
                 text = _extract_text(serialized)
-                return text, messages
+                return text, _condense_history(messages)
 
             if response.stop_reason == "tool_use":
                 tool_results = []
@@ -122,7 +122,47 @@ class AgentRunner:
             break
 
         text = _extract_text(serialized) if "serialized" in dir() else "(no response)"
-        return text, messages
+        return text, _condense_history(messages)
+
+
+def _condense_history(messages: list) -> list:
+    """Return a text-only view of the conversation for cross-turn history storage.
+
+    Strips all tool_use and tool_result messages, keeping only:
+    - User text turns  (role="user", plain string content)
+    - Assistant text   (role="assistant", text blocks only — tool_use blocks dropped)
+
+    Why: within each run() call the full tool exchange is maintained in the local
+    messages list, so tool pairs are never needed across turn boundaries.  Storing
+    them persistently is what causes the orphaned-tool_result 400 errors when the
+    history is trimmed — a raw slice can remove the assistant tool_use but leave
+    the matching user tool_result, and no amount of boundary-detection can fully
+    prevent this for all edge cases.
+
+    Claude's text responses already summarise tool results (URNs found, audiences
+    listed, etc.), so text-only history preserves all the context Claude needs to
+    continue the conversation and eventually build the campaign payload.
+    """
+    condensed = []
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content")
+
+        if role == "user" and isinstance(content, str):
+            condensed.append(msg)
+
+        elif role == "assistant":
+            if isinstance(content, list):
+                texts = [
+                    b["text"] for b in content
+                    if isinstance(b, dict) and b.get("type") == "text" and b.get("text")
+                ]
+                if texts:
+                    condensed.append({"role": "assistant", "content": "\n".join(texts)})
+            elif isinstance(content, str) and content:
+                condensed.append(msg)
+
+    return condensed
 
 
 def _serialize_content(content) -> list:
