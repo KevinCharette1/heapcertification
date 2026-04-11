@@ -1,19 +1,12 @@
 import json
-import warnings
-import urllib3
 from pathlib import Path
 
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request as GoogleRequest
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-import requests as _requests
 
 from .exceptions import GoogleDocsAPIError
-
-# Suppress SSL warnings from the egress proxy's self-signed cert
-warnings.filterwarnings("ignore")
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 SCOPES = ["https://www.googleapis.com/auth/documents"]
 TOKEN_FILE = Path("google_tokens.json")
@@ -32,12 +25,9 @@ def _get_credentials(client_secrets_file: str) -> Credentials:
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            # Refresh using a session with SSL verification disabled
-            session = _requests.Session()
-            session.verify = False
             try:
-                creds.refresh(GoogleRequest(session=session))
-            except Exception as e:
+                creds.refresh(GoogleRequest())
+            except Exception:
                 creds = None  # Force re-auth if refresh fails
 
         if not creds or not creds.valid:
@@ -55,17 +45,6 @@ def _get_credentials(client_secrets_file: str) -> Credentials:
         TOKEN_FILE.chmod(0o600)
 
     return creds
-
-
-import httplib2
-
-# Monkey-patch httplib2 to disable SSL cert verification (egress proxy self-signed cert)
-_OrigHttp = httplib2.Http
-class _NoSSLHttp(_OrigHttp):
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("disable_ssl_certificate_validation", True)
-        super().__init__(*args, **kwargs)
-httplib2.Http = _NoSSLHttp
 
 
 class GoogleDocsClient:
