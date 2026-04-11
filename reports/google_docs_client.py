@@ -1,7 +1,21 @@
+import urllib3
+import httplib2
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 from .exceptions import GoogleDocsAPIError
+
+# Suppress SSL warnings from the egress proxy's self-signed cert
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Monkey-patch httplib2 to disable SSL cert verification globally —
+# required because the egress proxy uses its own cert
+_OrigHttplib2Http = httplib2.Http
+class _NoSSLHttp(_OrigHttplib2Http):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("disable_ssl_certificate_validation", True)
+        super().__init__(*args, **kwargs)
+httplib2.Http = _NoSSLHttp
 
 SCOPES = ["https://www.googleapis.com/auth/documents"]
 SEPARATOR = "\n" + "\u2500" * 60 + "\n\n"
