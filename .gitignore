@@ -20,6 +20,7 @@ tokens.json
 .oauth_state
 google_sa_key.json
 report_config.yaml
+clickup_cache.json
 
 # IDE
 .idea/
