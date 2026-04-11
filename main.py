@@ -77,8 +77,195 @@ def pick_account(accounts: list[dict]) -> dict:
         print(f"Please enter a number between 1 and {len(accounts)}.")
 
 
+def cmd_reports(settings, dry_run: bool = False) -> None:
+    """
+    Weekly report consolidation command.
+
+    Usage:
+        python main.py reports            # fetch, preview, approve, write to Google Docs
+        python main.py reports --dry-run  # fetch and preview only — no Google Docs writes
+    """
+    import anthropic as _anthropic
+    from datetime import date, timedelta
+    from reports.config_loader import load_report_config
+    from reports.clickup_reader import ClickUpReader
+    from reports.google_docs_client import GoogleDocsClient
+    from reports.consolidator import Consolidator
+    from reports.models import ContractorReport
+
+    # Validate required settings
+    missing = []
+    if not settings.clickup_api_token:
+        missing.append("CLICKUP_API_TOKEN")
+    if not settings.clickup_workspace_id:
+        missing.append("CLICKUP_WORKSPACE_ID")
+    if not settings.google_sa_key_file:
+        missing.append("GOOGLE_SA_KEY_FILE")
+    if missing:
+        print("Error: the following env vars are required for the reports command:")
+        for m in missing:
+            print(f"  {m}")
+        sys.exit(1)
+
+    # Week ending = most recent Sunday (or today if today is Sunday)
+    today = date.today()
+    days_back = (today.weekday() + 1) % 7  # Sunday=6 → 0, Monday=0 → 1, …
+    week_ending = today - timedelta(days=days_back)
+
+    mode = " [DRY RUN — no writes]" if dry_run else ""
+    print(f"Weekly Report Consolidation — Week Ending {week_ending.strftime('%B %d, %Y')}{mode}")
+    print("─" * 60)
+
+    # Load client/contractor config
+    try:
+        clients = load_report_config()
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+    print(f"Found {len(clients)} client(s) in report_config.yaml\n")
+
+    # Initialise API clients
+    clickup = ClickUpReader(
+        api_token=settings.clickup_api_token,
+        workspace_id=settings.clickup_workspace_id,
+    )
+    gdocs = GoogleDocsClient(service_account_key_file=settings.google_sa_key_file)
+    anthropic_client = _anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    consolidator = Consolidator(anthropic_client=anthropic_client, model=settings.claude_model)
+
+    # ── Fetch + consolidate ──────────────────────────────────────────────
+    drafts = []
+    for client_cfg in clients:
+        print(f"Client: {client_cfg.name}")
+        reports = []
+
+        for contractor in client_cfg.contractors:
+            print(
+                f"  Fetching {contractor.name} ({contractor.source})...",
+                end=" ",
+                flush=True,
+            )
+            try:
+                if contractor.source == "clickup":
+                    raw = clickup.fetch_doc_content(
+                        doc_id=contractor.clickup_doc_id,
+                        page_id=contractor.clickup_page_id,
+                    )
+                elif contractor.source == "google_doc":
+                    raw = gdocs.read_doc_text(contractor.google_doc_id)
+                else:
+                    raise ValueError(f"Unknown source type: {contractor.source!r}")
+                reports.append(ContractorReport(
+                    contractor_name=contractor.name,
+                    client_id=client_cfg.id,
+                    source=contractor.source,
+                    raw_text=raw,
+                    week_ending=week_ending,
+                ))
+                print("OK")
+            except Exception as e:
+                print(f"FAILED ({e})")
+                reports.append(ContractorReport(
+                    contractor_name=contractor.name,
+                    client_id=client_cfg.id,
+                    source=contractor.source,
+                    raw_text="",
+                    week_ending=week_ending,
+                    fetch_error=str(e),
+                ))
+
+        print("  Consolidating with Claude...", end=" ", flush=True)
+        draft = consolidator.consolidate(
+            client_name=client_cfg.name,
+            client_id=client_cfg.id,
+            target_doc_id=client_cfg.google_doc_id,
+            reports=reports,
+            week_ending=week_ending,
+        )
+        drafts.append(draft)
+        print("done\n")
+
+    # ── Preview + approval loop ──────────────────────────────────────────
+    print("=" * 60)
+    print("DRAFT PREVIEW")
+    print("=" * 60)
+
+    approved = []
+    skipped = []
+
+    for draft in drafts:
+        print(f"\n{'─' * 60}")
+        print(f"Client:     {draft.client_name}")
+        print(f"Target doc: https://docs.google.com/document/d/{draft.target_google_doc_id}")
+        print(f"{'─' * 60}")
+        print(draft.consolidated_text)
+        print(f"{'─' * 60}")
+
+        if dry_run:
+            print("[dry-run] Skipping approval prompt.")
+            skipped.append(draft)
+            continue
+
+        while True:
+            try:
+                choice = input(
+                    f"\nApprove for {draft.client_name}? [y]es / [n]o / [e]dit: "
+                ).strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print("\nAborted.")
+                sys.exit(0)
+
+            if choice in ("y", "yes"):
+                approved.append(draft)
+                break
+            elif choice in ("n", "no"):
+                skipped.append(draft)
+                print(f"  Skipped.")
+                break
+            elif choice in ("e", "edit"):
+                print("Paste your revised report below.")
+                print("(Press Enter twice on a blank line to finish.)\n")
+                lines = []
+                blank_count = 0
+                while blank_count < 1:
+                    line = input()
+                    if line == "":
+                        blank_count += 1
+                    else:
+                        blank_count = 0
+                    lines.append(line)
+                draft.consolidated_text = "\n".join(lines).rstrip()
+                print("\nRevised draft saved. Preview:\n")
+                print(draft.consolidated_text)
+                print(f"{'─' * 60}")
+            else:
+                print("  Please enter 'y', 'n', or 'e'.")
+
+    # ── Write approved drafts ────────────────────────────────────────────
+    if not approved:
+        print(f"\nNo drafts approved. Nothing written.")
+        return
+
+    print(f"\nWriting {len(approved)} approved report(s) to Google Docs...")
+    for draft in approved:
+        print(f"  Prepending to {draft.client_name}'s doc...", end=" ", flush=True)
+        try:
+            gdocs.prepend_to_doc(draft.target_google_doc_id, draft.consolidated_text)
+            print("done")
+        except Exception as e:
+            print(f"FAILED: {e}")
+
+    print(f"\nSummary: {len(approved)} written, {len(skipped)} skipped.")
+
+
 def cmd_chat(settings) -> None:
     """Start the interactive agent chat loop."""
+    if not settings.linkedin_client_id or not settings.linkedin_client_secret:
+        print("Error: LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET must be set in .env")
+        print("Run 'python main.py login' after setting those values.")
+        sys.exit(1)
+
     tokens = load_tokens()
     if not tokens:
         print("No authentication tokens found.")
@@ -180,9 +367,12 @@ def main() -> None:
         if command == "login":
             callback_url = sys.argv[2] if len(sys.argv) > 2 else None
             cmd_login(settings, callback_url=callback_url)
+        elif command == "reports":
+            dry_run = "--dry-run" in sys.argv
+            cmd_reports(settings, dry_run=dry_run)
         else:
             print(f"Unknown command: {command}")
-            print("Usage: python main.py [login]")
+            print("Usage: python main.py [login | reports [--dry-run]]")
             sys.exit(1)
     else:
         cmd_chat(settings)

@@ -18,6 +18,8 @@ env/
 tokens.json
 *.json.bak
 .oauth_state
+google_sa_key.json
+report_config.yaml
 
 # IDE
 .idea/
