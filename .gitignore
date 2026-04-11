@@ -22,7 +22,6 @@ google_sa_key.json
 google_client_secret.json
 google_tokens.json
 report_config.yaml
-clickup_cache.json
 
 # IDE
 .idea/
