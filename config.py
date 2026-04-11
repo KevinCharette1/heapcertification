@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     clickup_api_token: str = ""
     clickup_workspace_id: str = ""   # Team ID — visible in your ClickUp workspace URL
 
-    # Google Docs service account (required for `python main.py reports`)
-    google_sa_key_file: str = "google_sa_key.json"
+    # Google Docs OAuth (required for `python main.py reports`)
+    google_client_secret_file: str = "google_client_secret.json"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

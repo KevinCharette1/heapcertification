@@ -130,7 +130,7 @@ def cmd_reports(settings, dry_run: bool = False) -> None:
         api_token=settings.clickup_api_token,
         workspace_id=settings.clickup_workspace_id,
     )
-    gdocs = GoogleDocsClient(service_account_key_file=settings.google_sa_key_file)
+    gdocs = GoogleDocsClient(client_secrets_file=settings.google_client_secret_file)
     anthropic_client = _anthropic.Anthropic(api_key=settings.anthropic_api_key)
     consolidator = Consolidator(anthropic_client=anthropic_client, model=settings.claude_model)
 

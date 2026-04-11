@@ -1,34 +1,81 @@
+import json
+import warnings
 import urllib3
-import httplib2
-from google.oauth2 import service_account
+from pathlib import Path
+
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request as GoogleRequest
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+import requests as _requests
 
 from .exceptions import GoogleDocsAPIError
 
 # Suppress SSL warnings from the egress proxy's self-signed cert
+warnings.filterwarnings("ignore")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Monkey-patch httplib2 to disable SSL cert verification globally —
-# required because the egress proxy uses its own cert
-_OrigHttplib2Http = httplib2.Http
-class _NoSSLHttp(_OrigHttplib2Http):
+SCOPES = ["https://www.googleapis.com/auth/documents"]
+TOKEN_FILE = Path("google_tokens.json")
+SEPARATOR = "\n" + "\u2500" * 60 + "\n\n"
+
+
+def _get_credentials(client_secrets_file: str) -> Credentials:
+    """
+    Load saved OAuth credentials or prompt the user to authorize.
+    Tokens are saved to google_tokens.json for reuse.
+    """
+    creds = None
+
+    if TOKEN_FILE.exists():
+        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            # Refresh using a session with SSL verification disabled
+            session = _requests.Session()
+            session.verify = False
+            try:
+                creds.refresh(GoogleRequest(session=session))
+            except Exception as e:
+                creds = None  # Force re-auth if refresh fails
+
+        if not creds or not creds.valid:
+            if not Path(client_secrets_file).exists():
+                raise GoogleDocsAPIError(
+                    f"Google OAuth client secrets file not found: {client_secrets_file}\n"
+                    "Download it from Google Cloud Console → APIs & Services → Credentials\n"
+                    "→ Create OAuth 2.0 Client ID (Desktop app) → Download JSON"
+                )
+            flow = InstalledAppFlow.from_client_secrets_file(client_secrets_file, SCOPES)
+            creds = flow.run_local_server(port=0)
+
+        # Save for future runs
+        TOKEN_FILE.write_text(creds.to_json())
+        TOKEN_FILE.chmod(0o600)
+
+    return creds
+
+
+import httplib2
+
+# Monkey-patch httplib2 to disable SSL cert verification (egress proxy self-signed cert)
+_OrigHttp = httplib2.Http
+class _NoSSLHttp(_OrigHttp):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("disable_ssl_certificate_validation", True)
         super().__init__(*args, **kwargs)
 httplib2.Http = _NoSSLHttp
 
-SCOPES = ["https://www.googleapis.com/auth/documents"]
-SEPARATOR = "\n" + "\u2500" * 60 + "\n\n"
-
 
 class GoogleDocsClient:
-    def __init__(self, service_account_key_file: str):
+    def __init__(self, client_secrets_file: str = "google_client_secret.json"):
         try:
-            creds = service_account.Credentials.from_service_account_file(
-                service_account_key_file,
-                scopes=SCOPES,
-            )
+            creds = _get_credentials(client_secrets_file)
             self._service = build("docs", "v1", credentials=creds, cache_discovery=False)
+            self._creds = creds
+        except GoogleDocsAPIError:
+            raise
         except Exception as e:
             raise GoogleDocsAPIError(f"Failed to initialize Google Docs client: {e}")
 
@@ -44,7 +91,6 @@ class GoogleDocsClient:
         """
         Insert text at the very beginning of a Google Doc (index 1),
         followed by a visual separator line.
-        Uses a single batchUpdate insertText request — atomic, no read needed first.
         """
         full_insert = text + SEPARATOR
         requests = [
