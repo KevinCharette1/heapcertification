@@ -99,8 +99,8 @@ def cmd_reports(settings, dry_run: bool = False) -> None:
         missing.append("CLICKUP_API_TOKEN")
     if not settings.clickup_workspace_id:
         missing.append("CLICKUP_WORKSPACE_ID")
-    if not settings.google_sa_key_file:
-        missing.append("GOOGLE_SA_KEY_FILE")
+    if not settings.google_client_secret_file:
+        missing.append("GOOGLE_CLIENT_SECRET_FILE")
     if missing:
         print("Error: the following env vars are required for the reports command:")
         for m in missing:
