@@ -33,7 +33,7 @@ class ClickUpReader:
         If page_id is None, auto-fetches the first page of the doc.
         """
         if page_id is None:
-            page_id = self._get_first_page_id(doc_id)
+            page_id = self._get_latest_page_id(doc_id)
 
         data = self._request(
             "GET",
@@ -42,7 +42,8 @@ class ClickUpReader:
         )
         return data.get("content", "")
 
-    def _get_first_page_id(self, doc_id: str) -> str:
+    def _get_latest_page_id(self, doc_id: str) -> str:
+        """Return the ID of the most recently created page (highest numeric ID)."""
         data = self._request(
             "GET",
             f"workspaces/{self._workspace_id}/docs/{doc_id}/pages",
@@ -53,7 +54,13 @@ class ClickUpReader:
                 status_code=0,
                 message=f"ClickUp Doc '{doc_id}' has no pages.",
             )
-        return pages[0]["id"]
+        # Page IDs are formatted as "<prefix>-<number>"; sort by the numeric suffix
+        def page_num(p: dict) -> int:
+            try:
+                return int(p["id"].rsplit("-", 1)[-1])
+            except (ValueError, IndexError):
+                return 0
+        return max(pages, key=page_num)["id"]
 
     def close(self) -> None:
         self._http.close()
